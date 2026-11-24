@@ -546,12 +546,12 @@ func (s *Service) tryOne(ctx context.Context, src Source, c Candidate) (Stream, 
 	if err != nil {
 		return Stream{}, err
 	}
-	return s.check(ctx, u, c.Duration)
+	return s.check(ctx, s.fetcher(src), u, c.Duration)
 }
 
 // check probes an address: it must answer with audio about as long as the song.
-func (s *Service) check(ctx context.Context, u string, want time.Duration) (Stream, error) {
-	body, total, ctype, err := s.fetch(ctx, u, 0)
+func (s *Service) check(ctx context.Context, c *http.Client, u string, want time.Duration) (Stream, error) {
+	body, total, ctype, err := s.fetch(ctx, c, u, 0)
 	if err != nil {
 		return Stream{}, err
 	}
@@ -562,7 +562,7 @@ func (s *Service) check(ctx context.Context, u string, want time.Duration) (Stre
 			if n >= total {
 				return Stream{}, ErrNoAudio
 			}
-			if body, _, _, err = s.fetch(ctx, u, n); err != nil {
+			if body, _, _, err = s.fetch(ctx, c, u, n); err != nil {
 				return Stream{}, err
 			}
 		} else {
@@ -579,14 +579,14 @@ func (s *Service) check(ctx context.Context, u string, want time.Duration) (Stre
 	return Stream{URL: u, Duration: d, Type: ctype}, nil
 }
 
-func (s *Service) fetch(ctx context.Context, u string, from int64) (b []byte, total int64, ctype string, err error) {
+func (s *Service) fetch(ctx context.Context, c *http.Client, u string, from int64) (b []byte, total int64, ctype string, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, 0, "", ErrNoAudio
 	}
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", from, from+32<<10-1))
-	resp, err := s.probe.Do(req)
+	resp, err := c.Do(req)
 	if err != nil {
 		return nil, 0, "", err
 	}
@@ -640,7 +640,7 @@ func (s *Service) Opener(f *Found) func(ctx context.Context, rng string) (*http.
 			if rng != "" {
 				req.Header.Set("Range", rng)
 			}
-			resp, err := s.probe.Do(req)
+			resp, err := s.fetcher(src).Do(req)
 			if err == nil && (resp.StatusCode < 400 || resp.StatusCode == http.StatusRequestedRangeNotSatisfiable) {
 				return resp, nil
 			}
@@ -684,20 +684,31 @@ func allowedHost(h string) bool {
 
 // Client returns the HTTP client for the platforms: it only reaches their own domains and
 // never a private address, whatever an answer or redirect says.
-func Client() *http.Client {
+func Client() *http.Client { return ClientWith(nil) }
+
+// ClientWith is Client that also reaches the hosts in extra. A source on this network, such as
+// a self-hosted server, needs its own address let through: only those exact addresses may be
+// private, and the platforms' own checks are untouched.
+func ClientWith(extra []string) *http.Client {
+	allowed := func(h string) bool {
+		if allowedHost(h) {
+			return true
+		}
+		return slices.Contains(extra, h)
+	}
 	d := &net.Dialer{Timeout: 3 * time.Second, Control: func(_, addr string, _ syscall.RawConn) error {
 		ap, err := netip.ParseAddrPort(addr)
 		if err != nil {
 			return err
 		}
-		if ip := ap.Addr().Unmap(); ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast() {
+		if ip := ap.Addr().Unmap(); (ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast()) && !slices.Contains(extra, ip.String()) {
 			return errors.New("refusing a private address")
 		}
 		return nil
 	}}
 	tr := &http.Transport{DialContext: d.DialContext, TLSHandshakeTimeout: 3 * time.Second, ResponseHeaderTimeout: 4 * time.Second,
 		MaxIdleConnsPerHost: 4, IdleConnTimeout: time.Minute, ForceAttemptHTTP2: true}
-	return &http.Client{Transport: guard{tr}, CheckRedirect: func(_ *http.Request, via []*http.Request) error {
+	return &http.Client{Transport: guard{tr, allowed}, CheckRedirect: func(_ *http.Request, via []*http.Request) error {
 		if len(via) > 4 {
 			return errors.New("too many redirects")
 		}
@@ -705,10 +716,13 @@ func Client() *http.Client {
 	}}
 }
 
-type guard struct{ next http.RoundTripper }
+type guard struct {
+	next http.RoundTripper
+	ok   func(host string) bool
+}
 
 func (g guard) RoundTrip(r *http.Request) (*http.Response, error) {
-	if !allowedHost(r.URL.Hostname()) || r.URL.Scheme != "http" && r.URL.Scheme != "https" {
+	if !g.ok(r.URL.Hostname()) || r.URL.Scheme != "http" && r.URL.Scheme != "https" {
 		return nil, errors.New("host not allowed")
 	}
 	return g.next.RoundTrip(r)
@@ -819,4 +833,18 @@ func (s *Service) Take(ctx context.Context, key string) (*Found, error) {
 		return &Found{Candidate: c, Stream: st}, nil
 	}
 	return nil, ErrGone
+}
+
+// HTTPClient is a source that needs its own client: one on this network must reach a private
+// address the platforms' client refuses. Sources that do not implement it use the shared one.
+type HTTPClient interface{ HTTP() *http.Client }
+
+// fetcher returns the client that may reach src's audio.
+func (s *Service) fetcher(src Source) *http.Client {
+	if h, ok := src.(HTTPClient); ok {
+		if c := h.HTTP(); c != nil {
+			return c
+		}
+	}
+	return s.probe
 }

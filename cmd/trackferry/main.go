@@ -307,7 +307,15 @@ func serve() error {
 		log.Warn("网易云　登录记录读不出来，按没登录处理")
 	}
 	go netease.Run(ctx)
-	sources := online.New(log, client, &online.Kuwo{Client: client}, &online.Kugou{Client: client}, &online.Migu{Client: client}, netease)
+	set := []online.Source{&online.Kuwo{Client: client}, &online.Kugou{Client: client}, &online.Migu{Client: client}, netease}
+	if cfg.Lx.Ready() {
+		// The server is usually on this network: its own client may reach it, and follow the
+		// redirect to a platform address while its cache is cold.
+		set = append(set, &online.Lx{BaseURL: cfg.Lx.URL, User: cfg.Lx.User, Password: cfg.Lx.Password,
+			Client: online.ClientWith(online.LxHosts(cfg.Lx.URL))})
+		log.Info("洛雪　已配置", "地址", cfg.Lx.URL, "账号", cfg.Lx.User)
+	}
+	sources := online.New(log, client, set...)
 	router := &routing.Router{Library: lib, Online: sources, Log: log, Openable: streams.Openable}
 	router.LoadSettings(ctx, st)
 	kept, err := openCache(cfg.DataDir, cacheLimit(ctx, st), log)
