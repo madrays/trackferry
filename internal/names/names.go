@@ -160,3 +160,50 @@ func SameArtist(a, b string) bool {
 	}
 	return false
 }
+
+// NearTitle reports whether two titles are the same song but for a character or two. People say
+// 「雨中的恋人」 for 黄凯芹's 「雨中的恋人们」, and a platform lists what it has; the extra or
+// missing character is not a different song.
+//
+// Only a short difference counts, and only on longer titles: two characters that differ by one
+// out of three ("情人" and "爱人") are different songs, while one out of five is a slip of the
+// tongue or a platform's own spelling.
+func NearTitle(a, b string) bool {
+	x, y := Norm(a), Norm(b)
+	if x == "" || y == "" || x == y {
+		return x == y
+	}
+	ra, rb := []rune(x), []rune(y)
+	long, short := ra, rb
+	if len(long) < len(short) {
+		long, short = short, long
+	}
+	if len(long)-len(short) > 1 {
+		return false
+	}
+	// A difference of one character in a title of five and up is a slip; below that it may be
+	// another song entirely.
+	if len(long) < 5 {
+		return false
+	}
+	return editsAtMostOne(long, short)
+}
+
+// editsAtMostOne reports whether a and b are at most one insertion, deletion or substitution
+// apart. b is never longer than a.
+func editsAtMostOne(a, b []rune) bool {
+	i, j, skipped := 0, 0, 0
+	for i < len(a) && j < len(b) {
+		if a[i] == b[j] {
+			i++
+			j++
+			continue
+		}
+		if skipped > 0 {
+			return false
+		}
+		skipped = 1
+		i++ // a character of the longer title that the shorter one does not have
+	}
+	return skipped+len(a)-i+len(b)-j <= 1
+}

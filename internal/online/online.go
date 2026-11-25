@@ -402,7 +402,7 @@ func shareArtist(a, b string) bool {
 
 // choose keeps the candidates that are the requested song, in the platform's order.
 func choose(cands []Candidate, readings []Reading, request string) []hit {
-	var named, plain []hit
+	var named, plain, nearNamed, nearPlain []hit
 	canon := ""
 	for _, c := range cands {
 		if names.VersionPenalty(c.Title, request) > 0 || strings.Contains(c.Title, "免费试听") {
@@ -411,34 +411,56 @@ func choose(cands []Candidate, readings []Reading, request string) []hit {
 		t, _ := names.SplitTitle(c.Title)
 		titles := []string{names.Norm(c.Title), names.Norm(t)}
 		ok, withArtist := false, false
+		near, nearArtist := false, false
 		for _, r := range readings {
 			want := names.Norm(r.Title)
 			for _, title := range titles {
 				if title == "" {
 					continue
 				}
+				exact := title == want
+				// One character apart is the same song said differently: 黄凯芹's
+				// 「雨中的恋人们」 for a request of 「雨中的恋人」.
+				alike := exact || names.NearTitle(title, want)
 				if r.Artist != "" {
-					withArtist = withArtist || title == want && names.ArtistMatch(c.Artist, r.Artist)
+					if exact || alike {
+						match := names.ArtistMatch(c.Artist, r.Artist)
+						withArtist = withArtist || exact && match
+						nearArtist = nearArtist || alike && match
+					}
 					continue
 				}
-				ok = ok || title == want
+				// The singer said first, as in 「周杰伦晴天」: the title alone is not the whole
+				// of what was asked, so it is not held to being equal to it.
 				for _, a := range names.Artists(c.Artist) {
 					withArtist = withArtist || a+title == want || title+a == want
 				}
+				if !alike {
+					continue
+				}
+				ok = ok || exact
+				near = near || alike
 			}
 		}
 		switch {
 		case withArtist:
 			named = append(named, hit{c, true})
+		case nearArtist:
+			nearNamed = append(nearNamed, hit{c, true})
 		case ok && (canon == "" || shareArtist(canon, c.Artist)):
 			canon = c.Artist
 			plain = append(plain, hit{c, false})
+		case near && (canon == "" || shareArtist(canon, c.Artist)):
+			nearPlain = append(nearPlain, hit{c, false})
 		}
 	}
-	if len(named) > 0 {
-		return named
+	// Exact titles first; a title one character off only when nothing matched exactly.
+	for _, set := range [][]hit{named, plain, nearNamed, nearPlain} {
+		if len(set) > 0 {
+			return set
+		}
 	}
-	return plain
+	return nil
 }
 
 // explain notes why shown candidates are not the song asked for.
