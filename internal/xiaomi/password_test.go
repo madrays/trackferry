@@ -2,10 +2,12 @@ package xiaomi
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPasswordLoginLinksDirectly(t *testing.T) {
@@ -108,5 +110,71 @@ func TestMaskAccount(t *testing.T) {
 		if got := maskAccount(in); got != want {
 			t.Errorf("maskAccount(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// Unlinking ends a password login that is still in progress: no step after it may resurrect
+// the account, and the password hash does not linger.
+func TestUnlinkEndsAPasswordLoginInProgress(t *testing.T) {
+	f := newFake(t)
+	f.pwFlow = "captcha"
+	path := filepath.Join(t.TempDir(), "xiaomi.json")
+	m, _ := newManager(t, f, path)
+	ctx := context.Background()
+	if _, err := m.StartPassword(ctx, "me@example.com", "secret-pw"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Unlink(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m.Password(); ok {
+		t.Fatal("the attempt outlived the unlink, password hash and all")
+	}
+	if _, err := m.SubmitCaptcha(ctx, "ABCD"); err == nil {
+		t.Fatal("a captcha submitted after the unlink resurrected the account")
+	}
+	if m.Status().Linked {
+		t.Fatal("linked after the unlink")
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("credentials file back", err)
+	}
+}
+
+// A login that finishes after an Unlink does not write the account or its file back.
+func TestUnlinkBeatsALoginThatIsFinishing(t *testing.T) {
+	f := newFake(t)
+	f.pwFlow = "captcha"
+	path := filepath.Join(t.TempDir(), "xiaomi.json")
+	m, _ := newManager(t, f, path)
+	ctx := context.Background()
+	f.holdExchange = make(chan struct{})
+	if _, err := m.StartPassword(ctx, "me@example.com", "secret-pw"); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := m.SubmitCaptcha(ctx, " ABCD ") // the captcha is right: the login links, but slowly
+		done <- err
+	}()
+	deadline := time.Now().Add(3 * time.Second)
+	for f.exchangeHits.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(2 * time.Millisecond)
+	}
+	if f.exchangeHits.Load() == 0 {
+		t.Fatal("the login never reached the exchange")
+	}
+	if err := m.Unlink(); err != nil {
+		t.Fatal(err)
+	}
+	close(f.holdExchange)
+	if err := <-done; !strings.Contains(err.Error(), ErrUnlinked.Detail) {
+		t.Fatal("the finished login wrote the account back:", err)
+	}
+	if m.Status().Linked {
+		t.Fatal("linked after the unlink")
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("credentials file back", err)
 	}
 }
