@@ -52,7 +52,7 @@ export function fromCommand(c: Command, run?: TakeoverRun): Story {
   const layers: Partial<Record<SourceName, Layer>> = {};
   for (const l of c.route?.layers ?? []) layers[l.name] = l;
   return make({
-    key: `c${c.id}`, kind: 'command', said: c.query, device: c.device_name, deviceId: c.device_id, commandId: c.id, start: Math.min(c.upstream_ms, c.seen_ms), seen: c.seen_ms,
+    key: `c${c.id}`, kind: 'command', said: c.query, device: c.device_name, deviceId: c.device_id, commandId: c.id, start: c.upstream_ms > 0 && c.upstream_ms < c.seen_ms ? c.upstream_ms : c.seen_ms, seen: c.seen_ms,
     layers, route: c.route, run: run ?? null, open: run?.outcome === 'running',
   });
 }
