@@ -51,8 +51,10 @@ func (x *index) group() {
 		if a.Cover == "" {
 			a.Cover = t.Cover
 		}
-		if a.Artist != t.Artist && len(names.Artists(t.Artist)) < len(names.Artists(a.Artist)) {
-			a.Artist = t.Artist // the shortest credit is the album's main artist
+		// The shortest credit is the album's main artist — but a track with no credit at all is
+		// not a shorter one, and once the album takes its emptiness it never recovers.
+		if a.Artist != t.Artist && len(names.Artists(t.Artist)) > 0 && len(names.Artists(t.Artist)) < len(names.Artists(a.Artist)) {
+			a.Artist = t.Artist
 		}
 	}
 	sort.SliceStable(x.albums, func(i, j int) bool { return x.albums[i].AddedMS > x.albums[j].AddedMS })
