@@ -122,6 +122,7 @@ function rowStatus(device: Device, watch: WatchStatus | undefined, song: string 
   if (device.mode === 'off') return null;
   if (watch?.state === 'error') return { text: `读不到音箱，会自动重试${watch.error ? `：${watch.error}` : ''}`, bad: true };
   if (song) return { text: `在放 ${song}` };
+  if (watch?.state === 'listening' && watch.idle) return { text: '正在听 · 一阵没人说话，读得慢些' };
   return watch ? { text: watchText[watch.state] } : null;
 }
 

@@ -270,7 +270,7 @@ func TestUnusableMount(t *testing.T) {
 	}
 }
 
-func TestMemberSongsAreNotKept(t *testing.T) {
+func TestMemberSongsAreKeptLikeAnyOther(t *testing.T) {
 	c, err := Open(t.TempDir(), "", 10, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
@@ -278,7 +278,7 @@ func TestMemberSongsAreNotKept(t *testing.T) {
 	f := song("1")
 	f.Candidate.Member = true
 	b := audio(200 << 10)
-	if err := c.Keep(context.Background(), f, "ask", from(b, int64(len(b)))); err != nil || c.Find("ask") != nil {
-		t.Fatal(err, "kept")
+	if err := c.Keep(context.Background(), f, "ask", from(b, int64(len(b)))); err != nil || c.Find("ask") == nil {
+		t.Fatal(err, "not kept")
 	}
 }

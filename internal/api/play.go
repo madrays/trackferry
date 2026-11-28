@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"trackferry/internal/feiniu"
+	"trackferry/internal/observe"
 	"trackferry/internal/online"
 	"trackferry/internal/routing"
 	"trackferry/internal/store"
@@ -285,6 +286,29 @@ func (s *Server) playingUpdate(w http.ResponseWriter, r *http.Request) {
 	if err := takeover.SavePrefs(r.Context(), s.Store, p); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
+	}
+	writeJSON(w, http.StatusOK, p)
+}
+
+func (s *Server) listening(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, observe.LoadPrefs(r.Context(), s.Store))
+}
+
+func (s *Server) listeningUpdate(w http.ResponseWriter, r *http.Request) {
+	p := observe.LoadPrefs(r.Context(), s.Store) // what is left out stays
+	if !readJSON(w, r, &p) {
+		return
+	}
+	if bad := p.Check(); bad != "" {
+		writeError(w, http.StatusBadRequest, "bad_listening", bad)
+		return
+	}
+	if err := observe.SavePrefs(r.Context(), s.Store, p); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	if s.Observer != nil {
+		s.Observer.Apply(p)
 	}
 	writeJSON(w, http.StatusOK, p)
 }

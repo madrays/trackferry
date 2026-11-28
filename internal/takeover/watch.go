@@ -416,8 +416,10 @@ func (r *runner) watch(fetchedAt time.Time, heard <-chan Heard, seeks <-chan see
 		}
 		now := e.now()
 		lost := track.Lost != nil && track.Lost()
-		// Xiao AI's voice can read as "playing" too; a speaker that hung up is not playing ours.
-		ours := p.Playing() && !r.foreign(p) && !(lost && (talking || !sounding))
+		// Xiao AI's voice can read as "playing" too: a speaker that hung up while she talks, or
+		// after she was asked for something else, is not playing ours. A speaker paused by its
+		// own key hangs up as well, and its play key goes on from what it still holds (#26).
+		ours := p.Playing() && !r.foreign(p) && !(lost && (talking || yield))
 		if deaf {
 			ours = false
 			if !p.Playing() {

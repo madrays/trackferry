@@ -142,3 +142,105 @@ func TestStaleRecordFlagged(t *testing.T) {
 		t.Fatalf("commands: %+v", cmds)
 	}
 }
+
+func TestSleepWindowAndSwitchOffStopReads(t *testing.T) {
+	o, src, _, clock := setup(t)
+	p := DefaultPrefs()
+	p.Sleep, p.SleepFrom, p.SleepTo = true, "23:00", "07:00"
+	o.Apply(p)
+	*clock = time.Date(2026, 11, 28, 23, 30, 0, 0, time.Local)
+	tick(o, clock, 0)
+	if s := o.Status(); s.Paused != "sleep" || src.calls != 0 {
+		t.Fatalf("read while asleep: %+v calls %d", s, src.calls)
+	}
+	*clock = time.Date(2026, 11, 29, 7, 0, 0, 0, time.Local)
+	tick(o, clock, 0)
+	if s := o.Status(); s.Paused != "" || src.calls != 1 {
+		t.Fatalf("not awake at 07:00: %+v calls %d", s, src.calls)
+	}
+	p.Listen = false
+	o.Apply(p)
+	tick(o, clock, time.Minute)
+	if s := o.Status(); s.Paused != "off" || src.calls != 1 {
+		t.Fatalf("read while switched off: %+v calls %d", s, src.calls)
+	}
+}
+
+func TestPrefsCheck(t *testing.T) {
+	for _, c := range []struct {
+		edit func(*Prefs)
+		ok   bool
+	}{
+		{func(*Prefs) {}, true},
+		{func(p *Prefs) { p.IntervalMS = 500 }, false},
+		{func(p *Prefs) { p.IdleMS = 1500 }, false},
+		{func(p *Prefs) { p.QuietMin = 0 }, false},
+		{func(p *Prefs) { p.QuietMin = 61 }, false},
+		{func(p *Prefs) { p.QuietMin = 3 }, true},
+		{func(p *Prefs) { p.SleepFrom = "25:00" }, false},
+		{func(p *Prefs) { p.SleepTo = p.SleepFrom }, false},
+	} {
+		p := DefaultPrefs()
+		c.edit(&p)
+		if (p.Check() == "") != c.ok {
+			t.Errorf("%+v: %q", p, p.Check())
+		}
+	}
+}
+
+func TestQuietSpeakerIsReadSlowerUntilItHearsSomething(t *testing.T) {
+	o, src, _, clock := setup(t)
+	o.Apply(DefaultPrefs())
+	base := clock.UnixMilli()
+	tick(o, clock, 0) // baseline: hot
+	tick(o, clock, HotFor+time.Second)
+	if s := o.Status(); !s.Devices[0].Idle {
+		t.Fatalf("not idle after %v: %+v", HotFor, s)
+	}
+	calls := src.calls
+	tick(o, clock, 3*time.Second) // inside the idle interval
+	if src.calls != calls {
+		t.Fatal("read again before the idle interval")
+	}
+	src.set([]xiaomi.Record{{RequestID: "w", Time: base + int64(HotFor/time.Millisecond) + 5000, Query: "今天天气怎么样"}}, nil)
+	tick(o, clock, DefaultIdleMS*time.Millisecond)
+	if s := o.Status(); s.Devices[0].Idle {
+		t.Fatalf("still idle after hearing something: %+v", s)
+	}
+}
+
+func TestQuietMinutesAreTheListeners(t *testing.T) {
+	o, _, _, clock := setup(t)
+	p := DefaultPrefs()
+	p.QuietMin = 3
+	o.Apply(p)
+	tick(o, clock, 0)
+	tick(o, clock, 2*time.Minute)
+	if o.Status().Devices[0].Idle {
+		t.Fatal("idle before 3 minutes")
+	}
+	tick(o, clock, time.Minute+time.Second)
+	if !o.Status().Devices[0].Idle {
+		t.Fatal("not idle after 3 minutes")
+	}
+}
+
+func TestRefusalPausesTheWholeAccount(t *testing.T) {
+	o, src, st, clock := setup(t)
+	if _, err := st.SetDeviceMode(context.Background(), "d2", store.ModeObserve); err != nil {
+		t.Fatal(err)
+	}
+	tick(o, clock, 0)
+	src.set(nil, &xiaomi.Error{Kind: xiaomi.KindUpstream, Detail: "busy"})
+	tick(o, clock, time.Second)
+	calls := src.calls
+	tick(o, clock, time.Second) // within the account's wait: neither speaker is read
+	if src.calls != calls {
+		t.Fatalf("read during the account's wait: %d → %d", calls, src.calls)
+	}
+	src.set(nil, nil)
+	tick(o, clock, maxRefused)
+	if o.refused != 0 || !o.cool.IsZero() {
+		t.Fatalf("wait not lifted after a good read: %d %v", o.refused, o.cool)
+	}
+}

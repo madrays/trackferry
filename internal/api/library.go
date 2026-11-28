@@ -46,6 +46,11 @@ func (s *Server) libraryScan(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]bool{"started": s.Library.Rescan()})
 }
 
+// libraryForgetEmpty drops at once the tracks of a music folder that reads empty.
+func (s *Server) libraryForgetEmpty(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusAccepted, map[string]bool{"started": s.Library.ForgetEmpty()})
+}
+
 func (s *Server) librarySearch(w http.ResponseWriter, r *http.Request) {
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	if len([]rune(q)) > 100 {

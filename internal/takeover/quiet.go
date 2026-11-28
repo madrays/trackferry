@@ -108,6 +108,14 @@ func (e *Engine) mute(ctx context.Context, dev string) (m muting) {
 		m.note = "记不下原音量，不静音"
 		return m
 	}
+	var early *answer // given before the mute was sent: it is the volume as it was
+	if known > 0 {
+		select {
+		case a := <-ask:
+			early = &a
+		default:
+		}
+	}
 	e.deepen(dev, d)
 	m.err = e.sp.SetVolume(ctx, dev, 0)
 	// Only a plain refusal means nothing changed. A call that got lost may have arrived.
@@ -117,13 +125,22 @@ func (e *Engine) mute(ctx context.Context, dev string) (m muting) {
 	}
 	if known > 0 {
 		// The answer tells the volume only if it was given before the mute arrived: what it
-		// says afterwards is the least the speaker goes down to, which need not be 0.
-		a := <-ask
+		// says afterwards is the least the speaker goes down to, which need not be 0, or a
+		// step of its fade on the way there. Such an answer is only believed when louder than
+		// the volume known: a mute never raises it. A lower one would only be meant if the
+		// volume was turned down in the half minute since it was last read (Refresh), which
+		// is far rarer than a song coming back at a step of the fade.
+		var a answer
+		if early != nil {
+			a = *early
+		} else {
+			a = <-ask
+		}
 		if m.statusOK = a.err == nil; !m.statusOK {
 			m.status = fmt.Sprintf("%s，按上次的音量 %d", describe(a.err), known)
 			return m
 		}
-		if a.p.Volume > e.floor(dev) && a.p.Volume != known {
+		if a.p.Volume > e.floor(dev) && a.p.Volume != known && (early != nil || a.p.Volume > known) {
 			m.volume = a.p.Volume
 			e.know(dev, m.volume)
 			if m.muted {

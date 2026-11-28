@@ -5,7 +5,7 @@ import { Stage } from './stage/Stage';
 import { Login, Setup } from './pages/Auth';
 import { Home } from './pages/Home';
 import { Brand } from './components/Mark';
-import { Dock } from './components/Dock';
+import { DeskBar, Dock } from './components/Dock';
 import { Fish } from './components/Fish';
 import { HereSaid } from './components/HereSaid';
 import { Signature } from './components/Signature';
@@ -189,6 +189,7 @@ function Inner() {
       </main>
       <HereSaid />
       {place.page !== 'welcome' && <Dock page={place.page} devices={data.devices} navigate={navigate} dot={needsAttention} />}
+      <DeskBar page={place.page} devices={data.devices} navigate={navigate} />
       {place.page !== 'account' && place.page !== 'search' && place.page !== 'more' && <footer className="colophon"><Signature /></footer>}
     </div>
   );

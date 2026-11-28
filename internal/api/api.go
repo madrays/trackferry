@@ -202,6 +202,8 @@ func (s *Server) Handler() http.Handler {
 	authed("GET /api/takeover/runs", s.takeoverRuns)
 	authed("GET /api/playing", s.playing)
 	authed("PUT /api/playing", s.playingUpdate)
+	authed("GET /api/listening", s.listening)
+	authed("PUT /api/listening", s.listeningUpdate)
 	if s.Dispatcher != nil {
 		authed("POST /api/devices/{id}/play", s.play)
 		authed("GET /api/devices/{id}/queue", s.queue)
@@ -235,6 +237,7 @@ func (s *Server) Handler() http.Handler {
 		authed("GET /api/library", s.libraryStatus)
 		authed("GET /api/library/search", s.librarySearch)
 		authed("POST /api/library/scan", s.libraryScan)
+		authed("POST /api/library/forget-empty", s.libraryForgetEmpty)
 		authed("PUT /api/library/every", s.libraryEvery)
 		authed("PUT /api/library/tracks/{id}/lyrics", s.lyricsOffset)
 		if s.Stream != nil {

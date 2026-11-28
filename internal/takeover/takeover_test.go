@@ -810,3 +810,36 @@ func TestHandoffStopsOnceWithoutMute(t *testing.T) {
 		t.Fatalf("a handoff touched the volume: %v", sp.volumes)
 	}
 }
+
+// The speaker's own pause key: no record, and while paused the speaker hangs up our stream.
+// Its play key plays on from what it still holds: that is our song, not something else (#26).
+func TestPauseKeyThenPlayKeyGoesOn(t *testing.T) {
+	e, sp, st := setup(t)
+	e.timing.Look, e.timing.LookClose, e.timing.CutIn = 10*time.Millisecond, 10*time.Millisecond, 100*time.Millisecond
+	r := req(sp)
+	r.Track.Length = time.Hour
+	var mu sync.Mutex
+	lost := false
+	r.Track.Lost = func() bool { mu.Lock(); defer mu.Unlock(); return lost }
+	run, err := e.Start(context.Background(), r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(700 * time.Millisecond) // past the guard and the cut-in window
+	sp.mu.Lock()
+	was := sp.playing
+	sp.playing = ""
+	sp.mu.Unlock()
+	mu.Lock()
+	lost = true
+	mu.Unlock()
+	time.Sleep(200 * time.Millisecond)
+	sp.mu.Lock()
+	sp.playing = was
+	sp.mu.Unlock()
+	time.Sleep(400 * time.Millisecond)
+	saved, _ := st.Run(context.Background(), run.ID)
+	if s := steps(saved); !strings.Contains(s, "paused,continued") || strings.Contains(s, "stopped") {
+		t.Fatalf("steps %s", s)
+	}
+}

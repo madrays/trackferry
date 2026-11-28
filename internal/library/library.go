@@ -64,7 +64,16 @@ type Status struct {
 	Artists  int     `json:"artists"`
 	Last     *Report `json:"last"`
 	Progress *Report `json:"progress,omitempty"`
+	// EmptySince is when the music folder was first read empty while tracks were still indexed
+	// (ms); they go after EmptyGrace of empty reads, or when asked.
+	EmptySince int64 `json:"empty_since,omitempty"`
 }
+
+// EmptyGrace is how long the music folder must keep reading empty before its tracks leave the
+// index: a network share that drops for a while still shows the folder, with nothing in it.
+const EmptyGrace = 24 * time.Hour
+
+const settingEmptySince = "library.empty_since"
 
 // Library is safe for concurrent use.
 type Library struct {
@@ -85,6 +94,8 @@ type Library struct {
 	retimed chan struct{}      // the interval was changed
 	cancel  context.CancelFunc // stops the running scan
 	loadAt  time.Time          // when a running scan last refreshed the index
+	empty   time.Time          // the folder read empty from then on, tracks still indexed
+	forget  bool               // the next scan drops the tracks of an empty folder at once
 
 	thumbs      string // where small covers are kept
 	thumbWrites atomic.Int64
@@ -102,8 +113,14 @@ func (l *Library) Load(ctx context.Context) error {
 		return err
 	}
 	idx := newIndex(rows)
+	var empty time.Time
+	if v, _ := l.st.Setting(ctx, settingEmptySince); v != "" {
+		if ms, err := strconv.ParseInt(v, 10, 64); err == nil {
+			empty = time.UnixMilli(ms)
+		}
+	}
 	l.mu.Lock()
-	l.idx, l.loaded = idx, true
+	l.idx, l.loaded, l.empty = idx, true, empty
 	l.mu.Unlock()
 	return nil
 }
@@ -244,6 +261,9 @@ func (l *Library) Status() Status {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 	st := Status{Running: l.running, Seen: l.seen, Tracks: len(l.idx.rows), Artists: len(l.idx.byArtist), Last: l.last}
+	if !l.empty.IsZero() && len(l.idx.rows) > 0 {
+		st.EmptySince = l.empty.UnixMilli()
+	}
 	if l.cur != nil {
 		c := *l.cur
 		c.Roots = append([]RootReport{}, l.cur.Roots...)
@@ -348,14 +368,12 @@ func (l *Library) Scan(ctx context.Context) (err error) {
 				return err
 			}
 			l.mu.Lock()
-			rep.Removed += n
+			rep.Removed += int64(n)
 			l.mu.Unlock()
 		}
 	}
-	if len(entries) > 0 {
-		if err := l.st.DropRootsExcept(ctx, roots); err != nil {
-			return err
-		}
+	if err := l.dropGone(ctx, rep, roots, len(entries) == 0, len(known) > 0, started); err != nil {
+		return err
 	}
 	if reread {
 		whole := true
@@ -371,6 +389,75 @@ func (l *Library) Scan(ctx context.Context) (err error) {
 		}
 	}
 	return l.Load(ctx)
+}
+
+// dropGone drops the tracks of folders no longer there. A folder read empty while tracks are
+// indexed may be a share that dropped: its tracks stay until it has read empty for EmptyGrace,
+// or until ForgetEmpty asks.
+func (l *Library) dropGone(ctx context.Context, rep *Report, roots []string, empty, indexed bool, now time.Time) error {
+	l.mu.Lock()
+	forget := l.forget
+	l.forget = false
+	since := l.empty
+	l.mu.Unlock()
+	mark := func(t time.Time) error {
+		v := ""
+		if !t.IsZero() {
+			v = strconv.FormatInt(t.UnixMilli(), 10)
+		}
+		if err := l.st.SetSetting(ctx, settingEmptySince, v); err != nil {
+			return err
+		}
+		l.mu.Lock()
+		l.empty = t
+		l.mu.Unlock()
+		return nil
+	}
+	if !empty || !indexed {
+		if !since.IsZero() {
+			if err := mark(time.Time{}); err != nil {
+				return err
+			}
+		}
+		if !empty {
+			return l.st.DropRootsExcept(ctx, roots)
+		}
+		return nil
+	}
+	if since.IsZero() {
+		since = now
+		if err := mark(now); err != nil {
+			return err
+		}
+		l.log.Warn("曲库　音乐文件夹是空的，曲目先留着", "满多久清掉", EmptyGrace.String())
+	}
+	if !forget && now.Sub(since) < EmptyGrace {
+		return nil
+	}
+	l.mu.RLock()
+	n := len(l.idx.rows)
+	l.mu.RUnlock()
+	if err := l.st.DropRootsExcept(ctx, nil); err != nil {
+		return err
+	}
+	l.mu.Lock()
+	rep.Removed += int64(n)
+	l.mu.Unlock()
+	l.log.Info("曲库　音乐文件夹一直是空的，清掉了旧曲目", "首", n)
+	return mark(time.Time{})
+}
+
+// ForgetEmpty drops at once the tracks of a music folder that reads empty, by scanning now.
+// It reports false when a scan is already running.
+func (l *Library) ForgetEmpty() bool {
+	l.mu.Lock()
+	if l.running {
+		l.mu.Unlock()
+		return false
+	}
+	l.forget = true
+	l.mu.Unlock()
+	return l.Rescan()
 }
 
 func skip(name string) bool {

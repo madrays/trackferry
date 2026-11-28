@@ -421,7 +421,8 @@ func serve() error {
 				log.Warn("缓存　没有存下", "音频", rt.Label()) // the error may carry the address
 			}
 		}}
-	obs := observe.New(xm, st, log, time.Second)
+	obs := observe.New(xm, st, log, observe.DefaultIntervalMS*time.Millisecond)
+	obs.Apply(observe.LoadPrefs(ctx, st))
 	obs.Live = hub
 	dispatcher.Favorite = func(ctx context.Context, id int64, on bool) error {
 		_, err := lib.SetFavorite(ctx, id, on)

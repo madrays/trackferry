@@ -127,10 +127,11 @@ export function Search({ devices, navigate }: { devices: Device[]; navigate: Nav
   const sounds = (s: Song) => !!song && (s.track ? song.track_id === s.track.id : !song.track_id && low(song.title ?? '') === low(s.title) && low(song.artist ?? '') === low(s.artist));
 
   const tracks = found?.tracks ?? [];
+  const near = tracks.some((t) => t.near); // nothing matched as typed: these differ by one character
   const albums: Album[] = [], singers: { name: string; cover?: string }[] = [];
   for (const t of tracks) {
     if (t.album_id && t.album && low(t.album).includes(low(key)) && albums.length < 4 && !albums.some((a) => a.id === t.album_id)) albums.push({ id: t.album_id, name: t.album, artist: t.artist, cover: t.cover ?? '', tracks: 0, added_ms: 0 });
-    for (const a of singer(t.artist).split(/[、/;,&]/).map((x) => x.trim())) if (a && low(a).includes(low(key)) && singers.length < 3 && !singers.some((x) => low(x.name) === low(a))) singers.push({ name: a, cover: t.cover });
+    for (const a of singer(t.artist).split(/[、/;,&]/).map((x) => x.trim())) if (a && (near || low(a).includes(low(key))) && singers.length < 3 && !singers.some((x) => low(x.name) === low(a))) singers.push({ name: a, cover: t.cover });
   }
 
   const row = (s: Song) => {
@@ -185,6 +186,7 @@ export function Search({ devices, navigate }: { devices: Device[]; navigate: Nav
           )}
           {side === 'here' ? <section>
             <header className="search-head">{tracks.length > FEW && <button type="button" className="shelf-more" onClick={() => setAll(!all)}>{all ? '收起' : `看全部 ${tracks.length}${tracks.length === 50 ? '+' : ''}`}</button>}</header>
+            {fresh && near && <p className="search-near muted">曲库里没有“{key}”，下面是差一个字的，看看是不是要找的</p>}
             {!found && !error ? <span className="spinner" /> : rows.length ? <ol className={`hits ${fresh ? '' : 'stale'}`}>{rows.map((t) => row(ofTrack(t)))}</ol> : fresh && <div className="search-none"><p className="muted">曲库里没有“{key}”</p><button type="button" className="btn ask-online" onClick={() => { setSide('online'); if (!online.res && !online.busy) ask(); }}>在线找</button></div>}
           </section> : <section>
             {online.busy && <p className="center"><span className="spinner" /></p>}

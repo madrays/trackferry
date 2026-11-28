@@ -123,7 +123,7 @@ func (x *index) nearTerms(want string) []Match {
 		for _, i := range ids {
 			if !seen[i] {
 				seen[i] = true
-				ms = append(ms, Match{TrackRow: x.rows[i], Score: formatRank(x.rows[i])})
+				ms = append(ms, Match{TrackRow: x.rows[i], Score: formatRank(x.rows[i]), Near: true})
 			}
 		}
 	}

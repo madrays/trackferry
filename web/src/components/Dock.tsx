@@ -8,6 +8,7 @@ import { Cover } from './Cover';
 import { SwitchOutput } from './SwitchOutput';
 import { Jelly } from './jelly';
 import { commandTV, tvID, useTVOutputs } from '../tv';
+import { onDeck, useLive } from '../live';
 
 type Nav = (p: Place) => void;
 const draw = (d: string) => <svg viewBox="0 0 24 24" width="25" height="25" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d} /></svg>;
@@ -20,8 +21,9 @@ const items: { page: Page; label: string; icon: ReactNode }[] = [
 const tabOf = (p: Page): Page => (p === 'flow' || p === 'say' || p === 'speakers' || p === 'account' || p === 'tv' ? 'more' : p);
 
 /** What is on, and the two buttons wanted most, on every page but 此刻. */
-function NowBar({ devices, navigate }: { devices: Device[]; navigate: Nav }) {
+function NowBar({ devices, navigate, wide }: { devices: Device[]; navigate: Nav; wide?: boolean }) {
   const h = useHere();
+  const { flows } = useLive();
   // The same output as 此刻: the pick when it has a song, else one that plays (see output-rule.ts).
   const { shown, bar: d, pick } = useStage(devices);
   const [busy, setBusy] = useState(false);
@@ -34,6 +36,13 @@ function NowBar({ devices, navigate }: { devices: Device[]; navigate: Nav }) {
     await (tv ? commandTV(tv.id, { action: a, revision: tv.playback.revision, entry: tv.playback.entry }) : api.press(d.id, a)).catch(() => {});
     setBusy(false);
   };
+  const tvOf = televisions.find((item) => item.id === tvID(d.id));
+  const level = d.id === HERE ? (h.canVolume ? h.volume : null) : tvOf ? tvOf.playback.volume ?? null : onDeck(flows, d.id)?.player?.volume ?? null;
+  const turn = (v: number) => {
+    if (d.id === HERE) here.volume(v);
+    else if (tvOf) commandTV(tvOf.id, { action: 'volume', volume: v, revision: tvOf.playback.revision, entry: tvOf.playback.entry }).catch(() => {});
+    else api.press(d.id, 'volume', { volume: v }).catch(() => {});
+  };
   return (
     <div className="nowbar glass dock-glass">
       <button type="button" className="nowbar-song" onClick={() => { if (shown !== d.id) pick(d.id); navigate({ page: 'home' }); }} aria-label={`正在放${d.title}，打开播放器`}>
@@ -42,8 +51,30 @@ function NowBar({ devices, navigate }: { devices: Device[]; navigate: Nav }) {
       <SwitchOutput key={d.id} source={d.id} devices={devices} className="nowbar-btn nowbar-switch" />
       <button type="button" className="nowbar-btn" disabled={busy} onClick={() => press(d.playing ? 'pause' : 'play')} aria-label={d.playing ? '暂停' : '播放'}>{d.waiting ? <span className="spinner spinner-tiny" /> : <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d={d.playing ? 'M7 5h3.6v14H7zM13.4 5H17v14h-3.6z' : 'M8 5.2v13.6L19 12z'} /></svg>}</button>
       <button type="button" className="nowbar-btn nowbar-next" disabled={busy || (d.id === HERE && h.songs.length < 2)} onClick={() => press('next')} aria-label="下一首"><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M4 6v12l8-6zM12 6v12l8-6z" /></svg></button>
+      {wide && level !== null && level >= 0 && <Level key={d.id} value={level} onSet={turn} />}
     </div>
   );
+}
+
+/** The volume on the wide bar: sent when let go, so a drag is one change for the speaker. */
+function Level({ value, onSet }: { value: number; onSet: (v: number) => void }) {
+  const [v, setV] = useState(value);
+  const held = useRef(false);
+  useEffect(() => { if (!held.current) setV(value); }, [value]);
+  const send = () => { held.current = false; if (v !== value) onSet(v); };
+  return (
+    <label className="nowbar-level" title={`音量 ${v}`}>
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4zM15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" /></svg>
+      <input type="range" min={0} max={100} value={v} aria-label="音量" onPointerDown={() => { held.current = true; }} onChange={(e) => setV(Number(e.target.value))} onPointerUp={send} onKeyUp={send} onBlur={() => { if (held.current) send(); }} />
+      <span className="num">{v}</span>
+    </label>
+  );
+}
+
+/** The bar of a wide screen: what is on, on every page but 此刻, so it can be paused anywhere. */
+export function DeskBar({ page, devices, navigate }: { page: Page; devices: Device[]; navigate: Nav }) {
+  if (page === 'home' || page === 'welcome') return null;
+  return <div className="deskbar"><NowBar devices={devices} navigate={navigate} wide /></div>;
 }
 
 /** The bar of a phone: a capsule of glass whose lens follows the finger, and search on its own. */

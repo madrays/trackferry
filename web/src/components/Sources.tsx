@@ -99,6 +99,7 @@ export function Sources({ onLight }: { onLight: (l: Light) => void }) {
             : <button className="btn btn-small btn-quiet" onClick={() => setClearing(true)}>清空</button>)}
         </div>
       )}
+      {cache && cache.limit_mb !== 0 && <p className="hint cache-note">缓存只为自家音箱少走一趟网络，存下的歌请只在家里自己听，不要拷出去传播或用作他途。登录网易云后靠会员放的歌也会留一份，会员到期后这些缓存仍在本地，是否继续保留请自行斟酌。音乐版权归词曲作者、唱片公司和平台所有，请尊重版权、支持正版。</p>}
       {error && <p className="field-error">{error}</p>}
     </Setting>
   );

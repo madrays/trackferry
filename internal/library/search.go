@@ -58,7 +58,8 @@ func newIndex(rows []store.TrackRow) *index {
 // Match is one file that fits a request. Lower Score is better.
 type Match struct {
 	store.TrackRow
-	Score int `json:"score"`
+	Score int  `json:"score"`
+	Near  bool `json:"near,omitempty"` // found by one misheard character: nothing matched as typed
 }
 
 // Result of looking a song up.

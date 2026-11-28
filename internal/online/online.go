@@ -43,7 +43,7 @@ type Candidate struct {
 	Duration   time.Duration `json:"-"`
 	DurationMS int64         `json:"duration_ms"`
 	Restricted bool          `json:"restricted"` // members only or paid
-	Member     bool          `json:"-"`          // played by the rights of an account: never kept
+	Member     bool          `json:"-"`          // played by the rights of the signed-in account
 	Note       string        `json:"note,omitempty"`
 	Why        string        `json:"why,omitempty"` // not the song asked for
 	Album      string        `json:"album,omitempty"`

@@ -78,6 +78,8 @@ export function Speakers({ account, devices, onDevices, onRescan }: {
         </Notice>
       )}
       {error && <Notice tone="error" title={error} />}
+      {obs?.paused === 'off' && <Notice tone="info" title="听歌识别已关闭"><p>说话点歌没反应；从网页、电视、Home Assistant 送歌照常。</p><div className="notice-actions"><a className="btn btn-small" href="#/account">去打开</a></div></Notice>}
+      {obs?.paused === 'sleep' && <Notice tone="info" title="在睡眠时段"><p>这段时间不读对话记录，说话点歌没反应；从网页送歌照常。</p></Notice>}
 
       {present.length > 0 ? (
         <ul className="spk-list">{present.map(row)}</ul>
@@ -88,6 +90,7 @@ export function Speakers({ account, devices, onDevices, onRescan }: {
         </div>
       )}
       {gone.length > 0 && <><h2 className="sub">已不在账号中</h2><ul className="spk-list">{gone.map(row)}</ul></>}
+      {account.linked && <p className="spk-foot muted">多久读一次音箱、没人说话时放慢、夜里睡眠时段，在<a href="#/account">设置 → 听歌识别</a>。常被小米限流时调长间隔。</p>}
 
     </section>
   );

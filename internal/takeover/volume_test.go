@@ -71,3 +71,30 @@ func TestVolumeThatDoesNotReturnIsSetAgain(t *testing.T) {
 	}
 	sp.mu.Unlock()
 }
+
+// A speaker that fades out answers in between once the mute is on its way: 9 of 65 seen on
+// a real speaker. Such an answer must not become the volume the song comes back at.
+func TestFadingReadingIsNotTheVolume(t *testing.T) {
+	e, sp, st := setup(t)
+	sp.least, sp.late = 20, true
+	e.know("d1", 40)
+	m := e.mute(context.Background(), "d1")
+	if m.volume != 40 || !m.muted {
+		t.Fatalf("%+v", m)
+	}
+	if v, _, _ := st.PendingVolume(context.Background(), "d1"); v != 40 {
+		t.Fatal(v)
+	}
+}
+
+// Turned up since it was last read: that answer is believed, a mute only lowers.
+func TestLouderReadingIsTheVolume(t *testing.T) {
+	e, sp, _ := setup(t)
+	e.know("d1", 40)
+	sp.mu.Lock()
+	sp.volume = 60
+	sp.mu.Unlock()
+	if m := e.mute(context.Background(), "d1"); m.volume != 60 {
+		t.Fatalf("%+v", m)
+	}
+}

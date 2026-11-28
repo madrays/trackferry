@@ -50,6 +50,11 @@ export function FolderCard({ onLight }: { onLight: (l: Light) => void }) {
     setBusy(true);
     try { await api.scanLibrary(); await load(); } catch (e) { setError((e as ApiError).message); } finally { setBusy(false); }
   };
+  const forget = async () => {
+    if (!confirm(`把曲库里的 ${n(lib.tracks)} 首歌清掉？文件夹挂回来后重新扫描会再读进来。`)) return;
+    setBusy(true);
+    try { await api.forgetEmpty(); await load(); } catch (e) { setError((e as ApiError).message); } finally { setBusy(false); }
+  };
   const every = async (m: number) => {
     setLib((x) => x && { ...x, every_minutes: m });
     try { await api.setEvery(m); } catch (e) { setError((e as ApiError).message); }
@@ -69,6 +74,12 @@ export function FolderCard({ onLight }: { onLight: (l: Light) => void }) {
           <p className="hint">有几个文件夹，就分别挂到 /music 下的不同名字，比如 /vol2/1000/Live:/music/现场:ro。每个会单独统计。</p>
         </div>
       )}
+      {!linked && (missing || empty) && lib.tracks > 0 && lib.empty_since ? (
+        <Notice tone="warn" title={`曲库里还留着 ${n(lib.tracks)} 首歌`}>
+          <p>{day(lib.empty_since)} {clock(lib.empty_since).slice(0, 5)} 起这个文件夹就读不到歌了。可能是网络共享掉线，所以先不删；连续 24 小时都是空的才自动清掉。确实不要了可以现在清。</p>
+          <div className="notice-actions"><button className="btn btn-small" disabled={busy || running} onClick={forget}>现在清掉</button></div>
+        </Notice>
+      ) : null}
       {!linked && folder && !missing && !empty && (
         <>
           {!folder.readable && <Notice tone="error" title="程序读不了这个文件夹"><p>{folder.error}。确认挂载的目录对容器的运行身份（PUID/PGID）可读。</p></Notice>}

@@ -9,6 +9,7 @@ import { SourceIcon } from '../components/SourceIcon';
 import { useInstall } from '../pwa';
 import { Signature } from '../components/Signature';
 import { Playing } from '../components/Playing';
+import { Listening } from '../components/Listening';
 import { ThisDevice } from '../components/ThisDevice';
 import { Sources } from '../components/Sources';
 import { useBackdrop } from '../stage/Stage';
@@ -18,7 +19,7 @@ import fish from '../assets/brand/fish-mark.webp';
 import word from '../assets/brand/wordmark.svg';
 import './settings.css';
 
-const parts = [['feiniu', '飞牛音乐'], ['folder', '音乐文件夹'], ['xiaomi', '小米账号'], ['sources', '线上音源'], ['playing', '连续播放'], ['home', 'Home Assistant'], ['password', '管理密码'], ['about', '关于']] as const;
+const parts = [['feiniu', '飞牛音乐'], ['folder', '音乐文件夹'], ['xiaomi', '小米账号'], ['listen', '听歌识别'], ['sources', '线上音源'], ['playing', '连续播放'], ['home', 'Home Assistant'], ['password', '管理密码'], ['about', '关于']] as const;
 type Part = (typeof parts)[number][0];
 
 export function Account({ account, build, startScanning, onChanged, onLogout }: {
@@ -118,6 +119,7 @@ export function Account({ account, build, startScanning, onChanged, onLogout }: 
           )}
       </Setting>
 
+      <Listening />
       <Sources onLight={sourceLight} />
       <ThisDevice />
       <Playing />

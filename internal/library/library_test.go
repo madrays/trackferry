@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -217,5 +218,66 @@ func TestFindToleratesAMisheardCharacter(t *testing.T) {
 	}
 	if ms := l.Find("张三李四", 50); len(ms) != 0 {
 		t.Fatalf("nothing near: %+v", ms)
+	}
+}
+
+func TestEmptiedFolderKeepsTracksUntilItStaysEmpty(t *testing.T) {
+	ctx := context.Background()
+	l, dir := newLib(t, map[string][]byte{"A/晴天.flac": flac("晴天", "周杰伦", 269)})
+	if err := l.Scan(ctx); err != nil || l.Size() != 1 {
+		t.Fatal(err, l.Size())
+	}
+	os.RemoveAll(filepath.Join(dir, "A")) // a share that dropped reads just like this
+	if err := l.Scan(ctx); err != nil {
+		t.Fatal(err)
+	}
+	s := l.Status()
+	if s.Tracks != 1 || s.EmptySince == 0 {
+		t.Fatalf("an empty read must not drop at once: %+v", s)
+	}
+	first := s.EmptySince
+	if err := l.Scan(ctx); err != nil || l.Status().EmptySince != first {
+		t.Fatalf("the first empty read counts: %v %+v", err, l.Status())
+	}
+
+	// Back with its music: the mark goes.
+	os.MkdirAll(filepath.Join(dir, "A"), 0o755)
+	os.WriteFile(filepath.Join(dir, "A/晴天.flac"), flac("晴天", "周杰伦", 269), 0o644)
+	if err := l.Scan(ctx); err != nil || l.Size() != 1 || l.Status().EmptySince != 0 {
+		t.Fatalf("refilled: %v %+v", err, l.Status())
+	}
+
+	// Empty for longer than the grace: the tracks go.
+	os.RemoveAll(filepath.Join(dir, "A"))
+	old := time.Now().Add(-EmptyGrace - time.Minute).UnixMilli()
+	l.st.SetSetting(ctx, settingEmptySince, strconv.FormatInt(old, 10))
+	l.Load(ctx)
+	if err := l.Scan(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if s := l.Status(); s.Tracks != 0 || s.EmptySince != 0 || s.Last.Removed != 1 {
+		t.Fatalf("after the grace: %+v %+v", s, s.Last)
+	}
+	if r := l.Find("晴天", 5); len(r) != 0 {
+		t.Fatalf("still found: %+v", r)
+	}
+}
+
+func TestForgetEmptyDropsAtOnce(t *testing.T) {
+	ctx := context.Background()
+	l, dir := newLib(t, map[string][]byte{"晴天.flac": flac("晴天", "周杰伦", 269)})
+	if err := l.Scan(ctx); err != nil || l.Size() != 1 {
+		t.Fatal(err, l.Size())
+	}
+	os.Remove(filepath.Join(dir, "晴天.flac"))
+	l.Scan(ctx)
+	if l.Size() != 1 {
+		t.Fatal("dropped too soon")
+	}
+	l.mu.Lock()
+	l.forget = true
+	l.mu.Unlock()
+	if err := l.Scan(ctx); err != nil || l.Size() != 0 || l.Status().EmptySince != 0 {
+		t.Fatalf("asked to forget: %v %+v", err, l.Status())
 	}
 }

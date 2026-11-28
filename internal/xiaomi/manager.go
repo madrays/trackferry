@@ -187,10 +187,11 @@ func (m *Manager) Unlink() error {
 	m.CancelPassword()
 	m.syncMu.Lock()
 	defer m.syncMu.Unlock()
+	// Under mu, as link writes: a login that begins after this Unlink keeps its file.
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.gen++ // a login still finishing must not write the account back
 	m.sess, m.relink, m.lastSync, m.miot = nil, false, nil, nil
-	m.mu.Unlock()
 	if err := os.Remove(m.path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -355,37 +356,30 @@ func (m *Manager) link(ctx context.Context, s Session) (SyncInfo, error) {
 	m.mu.Unlock()
 	s.LinkedAt = time.Now()
 	s, err := m.client.Exchange(ctx, s)
-	// The account may have been unlinked while the exchange ran: a login that finishes after
-	// an Unlink is not to bring the account or its credentials file back.
-	if err == nil && m.genOf() != gen {
-		err = ErrUnlinked
-	}
 	if err == nil {
-		err = m.save(&s)
+		// The check and the writes are one step under mu: an Unlink comes wholly before them
+		// (the login is refused) or wholly after (it removes what was written). A login that
+		// finishes after an Unlink never brings the account or its credentials file back.
+		m.mu.Lock()
+		switch {
+		case m.gen != gen:
+			err = ErrUnlinked
+		default:
+			if err = m.save(&s); err == nil {
+				m.sess, m.relink = &s, false
+			}
+		}
+		m.mu.Unlock()
 	}
 	if err != nil {
 		m.log.Warn("小米　关联失败", "类型", KindOf(err), "原因", err)
 		return SyncInfo{}, err
 	}
-	m.mu.Lock()
-	if m.gen != gen {
-		m.mu.Unlock()
-		return SyncInfo{}, ErrUnlinked
-	}
-	m.sess, m.relink = &s, false
-	m.mu.Unlock()
 	m.syncMu.Lock()
 	m.triedErr = nil
 	m.syncMu.Unlock()
 	m.log.Info("小米　已关联", "账号", maskUserID(s.UserID))
 	return m.Sync(ctx), nil
-}
-
-// genOf is the login generation: Unlink bumps it.
-func (m *Manager) genOf() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.gen
 }
 
 func (m *Manager) session() *Session {

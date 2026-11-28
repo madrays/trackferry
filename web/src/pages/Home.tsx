@@ -342,6 +342,8 @@ export function Home({ devices, navigate, onRelink }: HomeProps) {
     ...(error ? [{ tone: 'error' as const, text: error }] : []),
     ...(obs?.paused === 'relink_required' ? [{ tone: 'error' as const, text: '小米登录已失效，听不到点歌', act: '重新登录', go: onRelink }] : []),
     ...(obs?.paused === 'unlinked' ? [{ tone: 'warn' as const, text: '还没有关联小米账号，听不到点歌', act: '关联账号', go: onRelink }] : []),
+    ...(obs?.paused === 'off' ? [{ tone: 'info' as const, text: '听歌识别已关闭，说话点歌没反应，从这里送歌照常', act: '去打开', go: () => navigate({ page: 'account' }) }] : []),
+    ...(obs?.paused === 'sleep' ? [{ tone: 'info' as const, text: '在睡眠时段，说话点歌没反应，从这里送歌照常' }] : []),
     ...(obs && !obs.paused && obs.devices.length === 0 ? [{ tone: 'info' as const, text: '还没有音箱在听', act: '去选音箱', go: () => navigate({ page: 'speakers' }) }] : []),
   ];
   const sign = (d: string) => <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d} /></svg>;

@@ -879,3 +879,22 @@ button.quality { cursor: pointer; } button.quality:hover { color: var(--ink2); b
 .takeover-one .takeover-head h2 { font-size: 16px; } .takeover-one .takeover-head p { margin: 2px 0 12px; font-size: 13px; }
 @media (max-width: 760px) { .spk-row > button { gap: 14px; padding: 12px 2px; } .spk-row .body { width: 34px; height: 48px; } }
 .spk-sheet .sheet-body > p.spk-meta { padding: 0; }
+
+.spk-foot { margin: 22px 0 0; font-size: 13px; } .spk-foot a { color: var(--ink2); text-decoration: underline; text-underline-offset: 3px; margin: 0 2px; }
+.time-range { display: inline-flex; align-items: center; gap: 8px; color: var(--ink2); } .time-range input { min-height: 40px; padding: 0 10px; border: 0; border-radius: 6px; background: var(--well); color: var(--ink); font: inherit; font-variant-numeric: tabular-nums; color-scheme: dark; }
+.search-near { margin: 0 0 10px; font-size: 13px; }
+.cache-note { margin: 4px 0 0; font-size: 12.5px; line-height: 1.6; color: var(--ink3); }
+
+/* ---- the bar of a wide screen ---- */
+.deskbar { display: none; }
+@media (min-width: 761px) {
+  .deskbar { display: block; position: fixed; z-index: 30; left: 50%; bottom: 18px; width: min(640px, calc(100% - 48px)); transform: translateX(-50%); }
+  .shell:has(.deskbar .nowbar) { padding-bottom: 96px; }
+  .deskbar .nowbar { position: relative; display: flex; align-items: center; gap: 4px; height: 64px; padding: 0 12px 0 10px; border-radius: 32px; animation: rise .5s var(--out); }
+  .deskbar .nowbar-song { flex: 1; min-width: 0; height: 64px; display: flex; align-items: center; gap: 12px; padding: 0; border: 0; background: none; text-align: left; color: inherit; cursor: pointer; }
+  .deskbar .nowbar .cover { flex: none; width: 44px; border-radius: 12px; } .deskbar .nowbar-song span { min-width: 0; }
+  .deskbar .nowbar b, .deskbar .nowbar small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.35; } .deskbar .nowbar b { font-size: 15px; } .deskbar .nowbar small { font-size: 12px; color: var(--ink2); }
+  .deskbar .nowbar-btn { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: inherit; cursor: pointer; } .deskbar .nowbar-btn:hover:not(:disabled) { background: rgb(246 243 236 / .08); }
+  .nowbar-level { flex: none; display: flex; align-items: center; gap: 8px; margin-left: 6px; color: var(--ink2); } .nowbar-level input { width: 110px; accent-color: var(--ink); cursor: pointer; } .nowbar-level .num { width: 2.2em; font-size: 12px; text-align: right; }
+}
+@media (min-width: 761px) and (max-width: 900px) { .nowbar-level input { width: 72px; } }
