@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math"
 	"net/http"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -290,8 +291,30 @@ func (s *Server) playingUpdate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, p)
 }
 
+// nasClock is the time the sleep window is read by: this machine's, in its time zone.
+type nasClock struct {
+	Zone   string `json:"zone"`       // Asia/Shanghai; empty when not known
+	Offset int    `json:"offset_min"` // east of UTC
+	NowMS  int64  `json:"now_ms"`
+}
+
+func clockNow() nasClock {
+	t := time.Now()
+	_, off := t.Zone()
+	zone := time.Local.String()
+	if zone == "Local" {
+		zone = os.Getenv("TZ")
+	}
+	return nasClock{Zone: strings.TrimPrefix(zone, ":"), Offset: off / 60, NowMS: t.UnixMilli()}
+}
+
+type listeningOut struct {
+	observe.Prefs
+	Clock nasClock `json:"clock"`
+}
+
 func (s *Server) listening(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, observe.LoadPrefs(r.Context(), s.Store))
+	writeJSON(w, http.StatusOK, listeningOut{observe.LoadPrefs(r.Context(), s.Store), clockNow()})
 }
 
 func (s *Server) listeningUpdate(w http.ResponseWriter, r *http.Request) {
@@ -310,7 +333,7 @@ func (s *Server) listeningUpdate(w http.ResponseWriter, r *http.Request) {
 	if s.Observer != nil {
 		s.Observer.Apply(p)
 	}
-	writeJSON(w, http.StatusOK, p)
+	writeJSON(w, http.StatusOK, listeningOut{p, clockNow()})
 }
 
 func (s *Server) deviceHush(w http.ResponseWriter, r *http.Request, hush string) {

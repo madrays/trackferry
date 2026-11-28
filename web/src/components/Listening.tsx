@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, ApiError, type Listening as Prefs } from '../api';
+import { api, ApiError, type Listening as Prefs, type NasClock } from '../api';
 import { Pick } from './Pick';
 import { Setting } from './Setting';
 
@@ -10,6 +10,42 @@ const secs = (ms: number) => `${ms / 1000} 秒`;
 function EarIcon() {
   return <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7 9.5a5 5 0 1 1 9.2 2.7c-.9 1.4-2.2 2.1-2.2 3.8a2.7 2.7 0 0 1-5.2.9M9.6 9.6a2.4 2.4 0 1 1 4 1.8" /></svg>;
 }
+
+const hhmm = (min: number) => { const m = ((min % 1440) + 1440) % 1440; return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
+const minutes = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+const utc = (off: number) => off === 0 ? 'UTC' : `UTC${off < 0 ? '−' : '+'}${Math.floor(Math.abs(off) / 60)}${Math.abs(off) % 60 ? ':' + String(Math.abs(off) % 60).padStart(2, '0') : ''}`;
+const named = (zone: string, off: number) => (zone && !/^(Etc\/)?(UTC|GMT|UCT)$/.test(zone) ? `${zone}，${utc(off)}` : utc(off));
+
+/** Minutes this device's clock is ahead of the NAS's; 0 when the NAS's is not known. */
+const shiftOf = (clock?: NasClock) => (clock ? -new Date().getTimezoneOffset() - clock.offset_min : 0);
+
+/** The sleep window is kept by the NAS's clock and typed in this device's: says both when they differ. */
+function SleepClock({ clock, from, to }: { clock: NasClock; from: string; to: string }) {
+  const [now, setNow] = useState(Date.now());
+  const [skew] = useState(() => clock.now_ms - Date.now()); // the NAS's clock may be off a little
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 15000); return () => clearInterval(t); }, []);
+  const here = -new Date(now).getTimezoneOffset();
+  const hereZone = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return ''; } })();
+  const clockAt = (ms: number, off: number) => hhmm(Math.floor(ms / 60000) + off);
+  const nas = clockAt(now + skew, clock.offset_min);
+  const shift = here - clock.offset_min;
+  if (shift === 0) {
+    return <p className="sleep-clock">按你这台设备的时间填。NAS 现在 <b>{nas}</b>（{named(clock.zone, clock.offset_min)}），和你这里同一个时区。</p>;
+  }
+  const behind = shift > 0 ? `慢 ${hours(shift)}` : `快 ${hours(-shift)}`;
+  return (
+    <div className="sleep-clock sleep-clock-differs" role="note">
+      <p>上面是<b>你这台设备的时间</b>，NAS 和你不在一个时区，会自己换算：</p>
+      <ul>
+        <li>你这里现在 <b>{clockAt(now, here)}</b>（{named(hereZone, here)}）</li>
+        <li>NAS 现在 <b>{nas}</b>（{named(clock.zone, clock.offset_min)}），比你这里{behind}</li>
+        <li>NAS 实际在它的 <b>{from} 到 {to}</b> 不读</li>
+      </ul>
+      {clock.offset_min === 0 && <p>NAS 用的是 UTC，多半是容器没设时区：在 compose.yaml 的 environment 里加 <code>TZ: Asia/Shanghai</code>（换成你家的时区），再 <code>docker compose up -d</code>。设好以后这里就不用换算了。</p>}
+    </div>
+  );
+}
+const hours = (min: number) => (min % 60 ? `${Math.floor(min / 60)} 小时 ${min % 60} 分` : `${min / 60} 小时`);
 
 /** How often Xiaomi is asked what the speakers heard: more often hears sooner, and asks more of an account Xiaomi may limit. */
 export function Listening() {
@@ -27,6 +63,13 @@ export function Listening() {
       setError((e as ApiError).message);
     }
   };
+  // The window is typed and shown in this device's time and kept in the NAS's.
+  const shift = shiftOf(p?.clock);
+  const local = (nas: string) => hhmm(minutes(nas) + shift);
+  const nasTime = (here: string) => hhmm(minutes(here) - shift);
+  // Switched on as it came: the night of whoever switches it on, not of the NAS.
+  const sleepOn = (on: boolean): Partial<Prefs> => (on && shift !== 0 && p?.sleep_from === '01:00' && p.sleep_to === '07:00'
+    ? { sleep: true, sleep_from: nasTime('01:00'), sleep_to: nasTime('07:00') } : { sleep: on });
   const options = (list: number[], have: number, from = 0) => [...new Set([...list, have])].filter((ms) => ms >= from).sort((a, b) => a - b).map((ms) => ({ value: ms, label: secs(ms) }));
   return (
     <Setting id="listen" icon={<EarIcon />} title="听歌识别" state={p ? (p.listen ? '开' : '关') : undefined} light={p && !p.listen ? 'warn' : undefined}
@@ -58,17 +101,18 @@ export function Listening() {
             <label className="switch"><input type="checkbox" role="switch" checked={p.together} onChange={(e) => set({ together: e.target.checked })} aria-label="被限流时所有音箱一起等" /><span /></label>
           </div>
           <div className="kept">
-            <div><b>睡眠时段</b><small>这段时间完全不读，说话点歌没反应，网页送歌照常。按 NAS 的时区算</small></div>
-            <label className="switch"><input type="checkbox" role="switch" checked={p.sleep} onChange={(e) => set({ sleep: e.target.checked })} aria-label="睡眠时段" /><span /></label>
+            <div><b>睡眠时段</b><small>这段时间完全不读，说话点歌没反应，网页送歌照常</small></div>
+            <label className="switch"><input type="checkbox" role="switch" checked={p.sleep} onChange={(e) => set(sleepOn(e.target.checked))} aria-label="睡眠时段" /><span /></label>
           </div>
           {p.sleep && <div className="kept">
             <div><b>从几点到几点</b><small>结束早于开始时跨过零点，例如 23:00 到 07:00</small></div>
             <span className="time-range">
-              <input type="time" value={p.sleep_from} aria-label="开始" onChange={(e) => e.target.value && set({ sleep_from: e.target.value })} />
+              <input type="time" value={local(p.sleep_from)} aria-label="开始" onChange={(e) => e.target.value && set({ sleep_from: nasTime(e.target.value) })} />
               <span>到</span>
-              <input type="time" value={p.sleep_to} aria-label="结束" onChange={(e) => e.target.value && set({ sleep_to: e.target.value })} />
+              <input type="time" value={local(p.sleep_to)} aria-label="结束" onChange={(e) => e.target.value && set({ sleep_to: nasTime(e.target.value) })} />
             </span>
           </div>}
+          {p.sleep && p.clock && <SleepClock clock={p.clock} from={p.sleep_from} to={p.sleep_to} />}
         </>}
       </>}
       {error && <p className="field-error" role="alert">{error}</p>}

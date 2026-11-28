@@ -21,7 +21,9 @@ export interface HomeStatus { enabled: boolean; has_token: boolean; connected: n
 export interface Playing { single: boolean; pool: 'library' | 'favorites'; hours: number }
 export type Hush = 'normal' | 'strong' | 'wait';
 /** How speakers are listened to: how often Xiaomi is asked what they heard. */
-export interface Listening { listen: boolean; interval_ms: number; idle: boolean; idle_ms: number; quiet_min: number; sleep: boolean; sleep_from: string; sleep_to: string; together: boolean }
+export interface Listening { listen: boolean; interval_ms: number; idle: boolean; idle_ms: number; quiet_min: number; sleep: boolean; sleep_from: string; sleep_to: string; together: boolean; clock?: NasClock }
+/** The NAS's clock, which the sleep window is read by. */
+export interface NasClock { zone: string; offset_min: number; now_ms: number }
 export interface OnlineSong { key: string; source: 'kuwo' | 'kugou' | 'migu' | 'netease'; title: string; artist: string; album?: string; cover?: string; duration_ms: number; restricted: boolean; note?: string }
 /** Covers found online for the library: how far it is. */
 export interface FillStatus { on: boolean; running: boolean; left: number; asked: number; found: number; last_ms?: number; missing: number }
@@ -510,7 +512,7 @@ export const api = {
   playing: () => request<Playing>('GET', '/api/playing'),
   setPlaying: (p: Partial<Playing>) => request<Playing>('PUT', '/api/playing', p),
   listening: () => request<Listening>('GET', '/api/listening'),
-  setListening: (p: Partial<Listening>) => request<Listening>('PUT', '/api/listening', p),
+  setListening: (p: Partial<Omit<Listening, 'clock'>>) => request<Listening>('PUT', '/api/listening', p),
   me: () => request<{ name: string }>('GET', '/api/me'),
   rename: (name: string) => request<{ name: string }>('PUT', '/api/me', { name }),
   favorites: (from = 0) => request<{ tracks: Track[] | null; total: number }>('GET', `/api/library/favorites?from=${from}`),

@@ -898,3 +898,5 @@ button.quality { cursor: pointer; } button.quality:hover { color: var(--ink2); b
   .nowbar-level { flex: none; display: flex; align-items: center; gap: 8px; margin-left: 6px; color: var(--ink2); } .nowbar-level input { width: 110px; accent-color: var(--ink); cursor: pointer; } .nowbar-level .num { width: 2.2em; font-size: 12px; text-align: right; }
 }
 @media (min-width: 761px) and (max-width: 900px) { .nowbar-level input { width: 72px; } }
+.sleep-clock { margin: 0 0 14px; color: var(--ink2); font-size: 13.5px; line-height: 1.6; } .sleep-clock b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.sleep-clock-differs { padding: 12px 14px; border-radius: 8px; background: var(--well); } .sleep-clock-differs p { margin: 0; } .sleep-clock-differs ul { margin: 6px 0 0; padding-left: 18px; } .sleep-clock-differs p + ul + p { margin-top: 8px; } .sleep-clock code { font-size: 12.5px; }
