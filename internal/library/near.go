@@ -113,3 +113,33 @@ func (l *Library) NearArtist(name string) string {
 	}
 	return found
 }
+
+// nearTerms gathers the songs whose title or singer differs from want by one misheard
+// character, for a search that matched nothing as typed.
+func (x *index) nearTerms(want string) []Match {
+	seen := map[int]bool{}
+	var ms []Match
+	add := func(ids []int) {
+		for _, i := range ids {
+			if !seen[i] {
+				seen[i] = true
+				ms = append(ms, Match{TrackRow: x.rows[i], Score: formatRank(x.rows[i])})
+			}
+		}
+	}
+	for _, k := range x.titlesNear(want, false) {
+		add(x.byTitle[k])
+	}
+	for a, ids := range x.byArtist {
+		if names.NearArtist(a, want) {
+			add(ids)
+		}
+	}
+	sort.Slice(ms, func(i, j int) bool {
+		if ms[i].Score != ms[j].Score {
+			return ms[i].Score < ms[j].Score
+		}
+		return ms[i].ID < ms[j].ID
+	})
+	return ms
+}

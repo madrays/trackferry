@@ -279,7 +279,11 @@ func (l *Library) Find(q string, limit int) []Match {
 			out = append(out, Match{TrackRow: t, Score: score})
 		}
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Score < out[j].Score })
+	if len(out) == 0 {
+		// Nothing fits as typed: what was meant may differ by one misheard character, as the
+		// spoken lookups already allow. A singer's name, or a title long enough to go by alone.
+		out = x.nearTerms(strings.Join(terms, ""))
+	}
 	return out[:min(limit, len(out))]
 }
 
