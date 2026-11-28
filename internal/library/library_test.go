@@ -175,3 +175,22 @@ func TestScanAndLookup(t *testing.T) {
 		t.Fatalf("unreadable root: %+v tracks %d", s.Last.Roots[1], s.Tracks)
 	}
 }
+
+// A track of the album with no credit at all does not wipe the album's main artist away:
+// once the album takes an empty credit it can never recover one.
+func TestAlbumKeepsItsArtistOverAnEmptyCredit(t *testing.T) {
+	x := newIndex([]store.TrackRow{
+		{ID: 1, Title: "晴天", Artist: "周杰伦", Album: "叶惠美", AlbumID: "7", Format: "flac"},
+		{ID: 2, Title: "轨迹", Artist: "", Album: "叶惠美", AlbumID: "7", Format: "flac"},
+	})
+	for _, a := range x.albums {
+		if a.Name != "叶惠美" {
+			continue
+		}
+		if a.Artist != "周杰伦" || a.Tracks != 2 {
+			t.Fatalf("album artist wiped by the empty credit: %+v", a)
+		}
+		return
+	}
+	t.Fatal("no album")
+}
