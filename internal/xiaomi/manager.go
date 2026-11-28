@@ -97,6 +97,7 @@ type Manager struct {
 	lastSync *SyncInfo
 	qr       *qrLogin
 	pw       *pwLogin
+	gen      int        // bumped by Unlink, so a login still finishing does not write back
 	pwMu     sync.Mutex // serialises password login steps
 	syncMu   sync.Mutex // serialises syncs and token renewals
 	tried    time.Time  // last renewal that failed; with syncMu
@@ -104,6 +105,9 @@ type Manager struct {
 	miot     *Session  // a Mi Home token; with syncMu
 	renewed  time.Time // last renewal that worked; with syncMu
 }
+
+// ErrUnlinked means the account was unlinked while the login that was linking it still ran.
+var ErrUnlinked = &Error{Kind: KindExpired, Detail: "the account was unlinked meanwhile"}
 
 // NewManager loads credentials from path (data/private/xiaomi.json) if present.
 func NewManager(client *Client, path string, sink DeviceSink, log *slog.Logger) (*Manager, error) {
@@ -180,9 +184,11 @@ func (m *Manager) save(s *Session) error {
 // Unlink forgets the account. Speakers stay in the database with their settings.
 func (m *Manager) Unlink() error {
 	m.CancelQR()
+	m.CancelPassword()
 	m.syncMu.Lock()
 	defer m.syncMu.Unlock()
 	m.mu.Lock()
+	m.gen++ // a login still finishing must not write the account back
 	m.sess, m.relink, m.lastSync, m.miot = nil, false, nil, nil
 	m.mu.Unlock()
 	if err := os.Remove(m.path); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -344,8 +350,16 @@ func (m *Manager) finishLogin(login *qrLogin, res PollResult) {
 
 // link turns a fresh passToken into a stored, linked account and runs the first sync.
 func (m *Manager) link(ctx context.Context, s Session) (SyncInfo, error) {
+	m.mu.Lock()
+	gen := m.gen
+	m.mu.Unlock()
 	s.LinkedAt = time.Now()
 	s, err := m.client.Exchange(ctx, s)
+	// The account may have been unlinked while the exchange ran: a login that finishes after
+	// an Unlink is not to bring the account or its credentials file back.
+	if err == nil && m.genOf() != gen {
+		err = ErrUnlinked
+	}
 	if err == nil {
 		err = m.save(&s)
 	}
@@ -354,6 +368,10 @@ func (m *Manager) link(ctx context.Context, s Session) (SyncInfo, error) {
 		return SyncInfo{}, err
 	}
 	m.mu.Lock()
+	if m.gen != gen {
+		m.mu.Unlock()
+		return SyncInfo{}, ErrUnlinked
+	}
 	m.sess, m.relink = &s, false
 	m.mu.Unlock()
 	m.syncMu.Lock()
@@ -361,6 +379,13 @@ func (m *Manager) link(ctx context.Context, s Session) (SyncInfo, error) {
 	m.syncMu.Unlock()
 	m.log.Info("小米　已关联", "账号", maskUserID(s.UserID))
 	return m.Sync(ctx), nil
+}
+
+// genOf is the login generation: Unlink bumps it.
+func (m *Manager) genOf() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.gen
 }
 
 func (m *Manager) session() *Session {

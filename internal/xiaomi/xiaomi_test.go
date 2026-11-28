@@ -35,7 +35,8 @@ type fake struct {
 	plainEmpty   bool         // plain device_list returns [] and only master=1 has devices
 	listCalls    sync.Map
 	exchangeHits atomic.Int32
-	pwFlow       string // password flow: "direct", "captcha" or "verify"
+	holdExchange chan struct{} // when armed, the exchange waits, for racing a login against Unlink
+	pwFlow       string        // password flow: "direct", "captcha" or "verify"
 	pwSubmits    atomic.Int32
 	ubusMu       sync.Mutex
 	ubusCalls    []url.Values // forms received by /remote/ubus
@@ -63,6 +64,13 @@ func newFake(t *testing.T) *fake {
 				return
 			}
 			f.exchangeHits.Add(1)
+			if f.holdExchange != nil {
+				select {
+				case <-f.holdExchange:
+				case <-r.Context().Done():
+					return
+				}
+			}
 			fmt.Fprintf(w, `&&&START&&&{"code":0,"userId":12345678,"ssecurity":"SEC","nonce":%s,"location":"%s/sts?d=1"}`, nonce, f.srv.URL)
 		}
 	})
