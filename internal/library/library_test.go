@@ -175,3 +175,28 @@ func TestScanAndLookup(t *testing.T) {
 		t.Fatalf("unreadable root: %+v tracks %d", s.Last.Roots[1], s.Tracks)
 	}
 }
+
+// A search that matches nothing as typed still finds what was meant by one misheard character.
+func TestFindToleratesAMisheardCharacter(t *testing.T) {
+	l, _ := newLib(t, map[string][]byte{
+		"A/a.flac": flac("乌兰巴托的夜", "洋澜一", 240),
+		"A/b.flac": flac("哭砂", "洋澜一", 250),
+		"A/c.flac": flac("晴天", "周杰伦", 269),
+	})
+	if err := l.Scan(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if ms := l.Find("洋澜一", 50); len(ms) != 2 {
+		t.Fatalf("as typed: %d", len(ms))
+	}
+	ms := l.Find("杨澜一", 50) // 洋 written as its homophone 杨, as recognition often does
+	if len(ms) != 2 || ms[0].Artist != "洋澜一" {
+		t.Fatalf("near singer: %+v", ms)
+	}
+	if ms := l.Find("乌兰巴托之夜", 50); len(ms) != 1 || ms[0].Title != "乌兰巴托的夜" {
+		t.Fatalf("near title: %+v", ms)
+	}
+	if ms := l.Find("张三李四", 50); len(ms) != 0 {
+		t.Fatalf("nothing near: %+v", ms)
+	}
+}
