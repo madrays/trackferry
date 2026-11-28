@@ -70,7 +70,11 @@ type Route struct {
 	asked string
 	queue []int64
 	order []int64
+	ahead []online.Candidate // online songs to play on after it
 }
+
+// Ahead is the online songs that play on after this one, in order.
+func (r *Route) Ahead() []online.Candidate { return r.ahead }
 
 // Match is the local file chosen, if any.
 func (r *Route) Match() *library.Match { return r.match }
@@ -201,6 +205,10 @@ func (r *Router) Decide(ctx context.Context, in intent.Intent, query string) *Ro
 		}
 		r.pick(rt, in)
 		tr.Layer("library", rt.Layers[0])
+		// A singer the library does not have at all: the platforms may (#37).
+		if in.Kind == intent.KindArtist && rt.Decision != Local && rt.Layers[0].State == online.StateMiss && r.Online != nil {
+			r.singer(ctx, rt, in)
+		}
 		return rt
 	case intent.KindList:
 		if in.Control == intent.ListAlbum {
@@ -263,8 +271,20 @@ func (r *Router) Decide(ctx context.Context, in intent.Intent, query string) *Ro
 			return rt
 		}
 	}
-	if len(rivals) > 0 {
-		// The platforms are only asked for an opinion, so they get less time.
+	misheard := 0
+	if len(rivals) == 0 && !version {
+		misheard = r.misheard(in, query)
+	}
+	// One song of the library is a character off, and by the singer that was named: a title
+	// as it was said most likely exists nowhere, so the platforms are not kept waiting for (#32).
+	if misheard == 1 && r.near(rt, in, query) {
+		rt.Because("不问线上", "曲库里只有这一首差一个字，歌手也对得上")
+		tr.Layer("library", rt.Layers[0])
+		return rt
+	}
+	if len(rivals) > 0 || misheard > 0 {
+		// The platforms are only asked for an opinion, or the library has what was likely meant,
+		// so they get less time.
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, 2500*time.Millisecond)
 		defer cancel()
@@ -545,6 +565,29 @@ func (r *Router) near(rt *Route, in intent.Intent, query string) bool {
 		return true
 	}
 	return false
+}
+
+// misheard tells what the library has a character off what was said: 0 nothing, 1 a single
+// song by the singer that was named, 2 something less certain.
+func (r *Router) misheard(in intent.Intent, query string) int {
+	for i, rd := range Readings(in) {
+		res := r.Library.Near(rd.Title, rd.Artist, query)
+		if len(res.Matches) == 0 {
+			continue
+		}
+		if i > 0 || in.Artist == "" || res.Ambiguous {
+			return 2
+		}
+		title := names.Norm(res.Matches[0].Title)
+		for _, m := range res.Matches {
+			// Copies of one song in other formats are still the one song.
+			if names.Norm(m.Title) != title || !names.ArtistMatch(m.Artist, in.Artist) {
+				return 2
+			}
+		}
+		return 1
+	}
+	return 0
 }
 
 func (r *Router) openable(m library.Match) bool {

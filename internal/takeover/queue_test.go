@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"trackferry/internal/intent"
+	"trackferry/internal/online"
 	"trackferry/internal/routing"
 	"trackferry/internal/store"
 	"trackferry/internal/stream"
@@ -271,5 +272,30 @@ func TestRunTellsHowItEnded(t *testing.T) {
 			t.Errorf("%s: %v", c.name, sp.calls)
 		}
 		sp.mu.Unlock()
+	}
+}
+
+func TestOnlineSingerPlaysOnRoundAndRound(t *testing.T) {
+	d, _, _, _ := queueSetup(t)
+	var took []string
+	d.Online = func(_ context.Context, key string) (*routing.Route, error) {
+		took = append(took, key)
+		return routing.ForTest(key, "陈奕迅"), nil
+	}
+	first := routing.ForTest("好久不见", "陈奕迅")
+	first.List = "陈奕迅的歌"
+	q := onlineQueue("d1", "LX06", first, []online.Candidate{{Key: "kuwo:3", Title: "富士山下", Artist: "陈奕迅"}})
+	if len(q.ids) != 2 || q.list != "陈奕迅的歌" || q.outside[q.ids[1]].Online != "kuwo:3" {
+		t.Fatalf("%+v", q)
+	}
+	d.follow(q)
+	for range 2 {
+		if _, ok := d.step(q, 1); !ok {
+			t.Fatal("no next song")
+		}
+	}
+	// The first song comes back too, found anew.
+	if len(took) != 2 || took[0] != "kuwo:3" || took[1] != q.outside[q.ids[0]].Online {
+		t.Fatalf("took %v", took)
 	}
 }

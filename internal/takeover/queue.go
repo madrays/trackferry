@@ -12,6 +12,7 @@ import (
 
 	"trackferry/internal/library"
 	"trackferry/internal/live"
+	"trackferry/internal/online"
 	"trackferry/internal/routing"
 	"trackferry/internal/store"
 )
@@ -1020,6 +1021,22 @@ func onlineKey(rt *routing.Route) string {
 		return f.Candidate.Key
 	}
 	return ""
+}
+
+// onlineQueue plays on the online songs a route found after it, round and round. The one that
+// plays first is a song of the queue too, so it is found anew when the list comes back to it.
+func onlineQueue(dev, hardware string, rt *routing.Route, more []online.Candidate) *queue {
+	q := &queue{dev: dev, hardware: hardware, list: rt.List, outside: map[int64]Item{}}
+	add := func(key, title, artist string) {
+		id := -int64(len(q.ids) + 1)
+		q.ids = append(q.ids, id)
+		q.outside[id] = Item{Online: key, Title: title, Artist: artist}
+	}
+	add(onlineKey(rt), rt.Title, rt.Artist)
+	for _, c := range more {
+		add(c.Key, c.Title, c.Artist)
+	}
+	return q
 }
 
 // outsider finds an online song of a queue anew: its audio does not last.

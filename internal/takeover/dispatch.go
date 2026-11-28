@@ -531,6 +531,8 @@ func (d *Dispatcher) OnCommand(ctx context.Context, c store.Command, hardware, m
 			q.ids, q.pos = slices.Clone(q.order), at
 		}
 		req.Ended = d.follow(q)
+	} else if more := rt.Ahead(); len(more) > 0 && d.Next != nil && d.Online != nil {
+		req.Ended = d.follow(onlineQueue(c.DeviceID, hardware, rt, more))
 	} else {
 		req.Ended = d.After(c.DeviceID, hardware, rt.TrackID, rt, false)
 	}
