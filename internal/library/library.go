@@ -352,7 +352,10 @@ func (l *Library) Scan(ctx context.Context) (err error) {
 			l.mu.Unlock()
 		}
 	}
-	if len(entries) > 0 {
+	// A read of the folder that succeeded but found nothing still means what it said: the
+	// music is gone. Only a folder that is not there at all (a mount that is down) keeps the
+	// old tracks, so that they come back with the mount.
+	if err == nil {
 		if err := l.st.DropRootsExcept(ctx, roots); err != nil {
 			return err
 		}

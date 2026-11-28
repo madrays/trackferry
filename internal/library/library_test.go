@@ -175,3 +175,26 @@ func TestScanAndLookup(t *testing.T) {
 		t.Fatalf("unreadable root: %+v tracks %d", s.Last.Roots[1], s.Tracks)
 	}
 }
+
+// A folder that is still there but emptied of music loses its old tracks on the next scan; a
+// folder that is gone entirely (a mount that is down) keeps them until it comes back.
+func TestScanClearsAnEmptiedFolder(t *testing.T) {
+	l, dir := newLib(t, map[string][]byte{
+		"A/a.flac": flac("晴天", "周杰伦", 269),
+	})
+	if err := l.Scan(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if l.Size() != 1 {
+		t.Fatal("did not index")
+	}
+	if err := os.RemoveAll(filepath.Join(dir, "A")); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Scan(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if l.Size() != 0 || len(l.Find("晴天", 10)) != 0 {
+		t.Fatalf("the emptied folder kept its old tracks: %d", l.Size())
+	}
+}
